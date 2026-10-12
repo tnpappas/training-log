@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Training Log</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f5f6f8;--card:#ffffff;--ink:#16202c;--muted:#5d6b7a;--line:#dfe4ea;
+  --accent:#1f5fa8;--accent-ink:#ffffff;--ok:#1e7a46;--ok-bg:#e6f4ec;--err:#a8321f;--err-bg:#fbe9e5;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#10151c;--card:#18202a;--ink:#e8edf2;--muted:#9aa7b5;--line:#2a3542;
+    --accent:#5b9be6;--accent-ink:#0b1118;--ok:#5fcb8c;--ok-bg:#16301f;--err:#f08a77;--err-bg:#3a1c16;color-scheme:dark}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Inter,system-ui,sans-serif}
+.wrap{max-width:720px;margin:0 auto;padding:24px 16px 64px}
+h1{font-size:26px;margin:0 0 4px;letter-spacing:-.01em;text-wrap:balance}
+h2{font-size:18px;margin:0 0 12px}
+.sub{color:var(--muted);margin:0 0 24px}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px}
+label{display:block;font-weight:600;font-size:14px;margin:0 0 6px}
+input,textarea{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+textarea{min-height:88px;resize:vertical}
+input:focus,textarea:focus,button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.field{margin-bottom:14px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:520px){.row{grid-template-columns:1fr}}
+button{font:inherit;font-weight:600;border:0;border-radius:8px;padding:11px 18px;cursor:pointer;background:var(--accent);color:var(--accent-ink)}
+button.ghost{background:transparent;color:var(--accent);border:1px solid var(--line);padding:8px 14px}
+button.danger{background:transparent;color:var(--err);border:1px solid var(--line);padding:8px 14px}
+button.danger.solid{background:var(--err);color:#fff;border-color:var(--err)}
+button:disabled{opacity:.6;cursor:default}
+.msg{border-radius:8px;padding:10px 12px;margin-top:12px;font-size:14px}
+.msg.ok{background:var(--ok-bg);color:var(--ok)}
+.msg.err{background:var(--err-bg);color:var(--err)}
+.emp{padding:14px 0;border-top:1px solid var(--line)}
+.emp:first-child{border-top:0;padding-top:0}
+.emp-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.emp-head > div:first-child{min-width:0}
+.emp a{color:var(--ink);font-weight:600;text-decoration:none}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.confirm{margin-top:10px;padding:12px;border-radius:8px;background:var(--err-bg);color:var(--err);font-size:14px}
+.confirm .actions{margin-top:8px}
+.meta{color:var(--muted);font-size:14px}
+.stats{display:flex;gap:24px;flex-wrap:wrap}
+.stat b{display:block;font-size:22px;font-variant-numeric:tabular-nums}
+.entry{border-top:1px solid var(--line);padding:14px 0}
+.entry:first-of-type{border-top:0;padding-top:0}
+.entry ol{margin:6px 0 0;padding-left:20px}
+.entry li{margin-bottom:4px;white-space:pre-wrap;overflow-wrap:anywhere}
+.back{display:inline-block;margin-bottom:16px;color:var(--accent);text-decoration:none;font-size:14px}
+.empty{color:var(--muted);margin:0}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"><p class="sub">Loading...</p></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+const sb = supabase.createClient(
+  "https://clorgnjwolxrlvnkdeyu.supabase.co",
+  "sb_publishable_VUkvGSuRjA8zqJwU5uShFA_Uuk7ax8z"
+);
+const app = document.getElementById("app");
+
+function esc(s){ const d=document.createElement("div"); d.textContent = s ?? ""; return d.innerHTML; }
+function localISO(d = new Date()){ const z = new Date(d.getTime() - d.getTimezoneOffset()*60000); return z.toISOString().slice(0,10); }
+function fmt(iso){ const [y,m,d] = iso.split("-").map(Number); return new Date(y,m-1,d).toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric",year:"numeric"}); }
+function daysSince(iso){ const [y,m,d] = iso.split("-").map(Number); const a = new Date(y,m-1,d), b = new Date(); b.setHours(0,0,0,0); return Math.round((b - a)/86400000); }
+function linkFor(id){ return location.origin + location.pathname + "?e=" + id; }
+async function copy(text, btn){
+  try { await navigator.clipboard.writeText(text); const t = btn.textContent; btn.textContent = "Copied"; setTimeout(()=>btn.textContent=t,1500); }
+  catch { window.prompt("Copy this link:", text); }
+}
+async function isAdmin(){
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) return false;
+  const { data } = await sb.rpc("is_training_admin");
+  return data === true;
+}
+
+/* ---------- Login ---------- */
+function renderLogin(note){
+  app.innerHTML = `
+    <h1>Training Log</h1>
+    <p class="sub">Admin sign in. Employees use the personal link they were sent and do not need to sign in.</p>
+    <div class="card">
+      <form id="loginForm">
+        <div class="field"><label for="em">Email</label><input id="em" type="email" required autocomplete="username"></div>
+        <div class="field"><label for="pw">Password</label><input id="pw" type="password" required autocomplete="current-password"></div>
+        <button type="submit">Sign in</button>
+        <div id="loginMsg">${note ? `<p class="msg err">${esc(note)}</p>` : ""}</div>
+      </form>
+    </div>`;
+  document.getElementById("loginForm").onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector("button"); btn.disabled = true;
+    const { error } = await sb.auth.signInWithPassword({
+      email: document.getElementById("em").value.trim(),
+      password: document.getElementById("pw").value
+    });
+    if (error) {
+      document.getElementById("loginMsg").innerHTML = `<p class="msg err">Sign in failed: ${esc(error.message)}</p>`;
+      btn.disabled = false; return;
+    }
+    route();
+  };
+}
+
+/* ---------- Admin ---------- */
+async function renderAdmin(){
+  app.innerHTML = `
+    <div class="top">
+      <div><h1>Training Log</h1><p class="sub">Each employee records two things they learned every day. Send them their personal link in Cliq.</p></div>
+      <button class="ghost" id="signOut">Sign out</button>
+    </div>
+    <div class="card">
+      <h2>Add an employee</h2>
+      <form id="addForm">
+        <div class="row">
+          <div class="field"><label for="n">Full name</label><input id="n" required maxlength="120" autocomplete="off"></div>
+          <div class="field"><label for="h">Date of hire</label><input id="h" type="date" required></div>
+        </div>
+        <div class="field"><label for="c">Company (optional)</label><input id="c" maxlength="120" placeholder="Safe House Property Inspections"></div>
+        <button type="submit">Add employee</button>
+        <div id="addMsg"></div>
+      </form>
+    </div>
+    <div class="card"><h2>Employees</h2><div id="list"><p class="empty">Loading...</p></div></div>`;
+  document.getElementById("h").value = localISO();
+  document.getElementById("signOut").onclick = async () => { await sb.auth.signOut(); route(); };
+  document.getElementById("addForm").onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector("button"); btn.disabled = true;
+    const name = document.getElementById("n").value.trim();
+    const { error } = await sb.from("training_employees").insert({
+      full_name: name,
+      hire_date: document.getElementById("h").value,
+      company: document.getElementById("c").value.trim() || null
+    });
+    const msg = document.getElementById("addMsg");
+    if (error) { msg.innerHTML = `<p class="msg err">Could not add employee: ${esc(error.message)}</p>`; btn.disabled = false; return; }
+    e.target.reset(); document.getElementById("h").value = localISO(); btn.disabled = false;
+    msg.innerHTML = `<p class="msg ok">${esc(name)} added. Use Copy link below to send their link.</p>`;
+    loadList();
+  };
+  loadList();
+}
+
+async function loadList(){
+  const list = document.getElementById("list");
+  const { data: emps, error } = await sb.from("training_employees")
+    .select("id,full_name,hire_date,company,training_entries(count)").order("hire_date",{ascending:false});
+  if (error) { list.innerHTML = `<p class="msg err">Could not load employees: ${esc(error.message)}</p>`; return; }
+  if (!emps.length) { list.innerHTML = `<p class="empty">No employees yet. Add one above.</p>`; return; }
+  list.innerHTML = emps.map(e => `
+    <div class="emp" data-id="${e.id}">
+      <div class="emp-head">
+        <div><a href="?e=${e.id}">${esc(e.full_name)}</a>
+          <div class="meta">${e.company ? esc(e.company) + " · " : ""}Hired ${fmt(e.hire_date)} · ${e.training_entries[0].count} days logged</div></div>
+        <div class="actions">
+          <button class="ghost" data-act="copy">Copy link</button>
+          <button class="danger" data-act="ask">Delete</button>
+        </div>
+      </div>
+      <div class="confirm" hidden>
+        Delete ${esc(e.full_name)} and all ${e.training_entries[0].count} days of their training record? This cannot be undone.
+        <div class="actions"><button class="danger solid" data-act="delete">Delete permanently</button><button class="ghost" data-act="cancel">Cancel</button></div>
+      </div>
+    </div>`).join("");
+  list.querySelectorAll(".emp").forEach(row => {
+    const id = row.dataset.id, box = row.querySelector(".confirm");
+    row.querySelector('[data-act="copy"]').onclick = (ev) => copy(linkFor(id), ev.target);
+    row.querySelector('[data-act="ask"]').onclick = () => { box.hidden = false; };
+    row.querySelector('[data-act="cancel"]').onclick = () => { box.hidden = true; };
+    row.querySelector('[data-act="delete"]').onclick = async (ev) => {
+      ev.target.disabled = true;
+      const { error } = await sb.from("training_employees").delete().eq("id", id);
+      if (error) { box.insertAdjacentHTML("beforeend", `<p class="msg err">Could not delete: ${esc(error.message)}</p>`); ev.target.disabled = false; return; }
+      loadList();
+    };
+  });
+}
+
+/* ---------- Employee log (no login) ---------- */
+async function renderEmployee(id){
+  const [{ data, error }, admin] = await Promise.all([ sb.rpc("training_get_log", { p_id: id }), isAdmin() ]);
+  if (error || !data) {
+    app.innerHTML = `<h1>Training Log</h1><p class="msg err">${error ? esc(error.message) : "This link does not match an employee. Ask your manager for a new link."}</p>`;
+    return;
+  }
+  const emp = data.employee, entries = data.entries;
+  const today = localISO();
+  const doneToday = entries.some(x => x.entry_date === today);
+  const day = Math.max(daysSince(emp.hire_date) + 1, 0);
+  document.title = emp.full_name + " · Training Log";
+  app.innerHTML = `
+    ${admin ? `<a class="back" href="./">All employees</a>` : ""}
+    <h1>${esc(emp.full_name)}</h1>
+    <p class="sub">${emp.company ? esc(emp.company) + " · " : ""}Hired ${fmt(emp.hire_date)}</p>
+    <div class="card">
+      <div class="stats">
+        <div class="stat"><b>${day}</b><span class="meta">Day on the job</span></div>
+        <div class="stat"><b>${entries.length}</b><span class="meta">Days logged</span></div>
+        <div class="stat"><b>${entries.length * 2}</b><span class="meta">Things learned</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Today, ${fmt(today)}</h2>
+      ${doneToday ? `<p class="msg ok">Today's entry is in. Come back tomorrow.</p>` : `
+      <form id="entryForm">
+        <div class="field"><label for="l1">1. Something I learned today</label><textarea id="l1" required maxlength="2000"></textarea></div>
+        <div class="field"><label for="l2">2. Something else I learned today</label><textarea id="l2" required maxlength="2000"></textarea></div>
+        <button type="submit">Submit today's entry</button>
+        <div id="entryMsg"></div>
+      </form>`}
+    </div>
+    <div class="card"><h2>Training record</h2>
+      ${entries.length ? entries.map(x => `
+        <div class="entry"><div class="meta">${fmt(x.entry_date)}</div>
+          <ol><li>${esc(x.learned_1)}</li><li>${esc(x.learned_2)}</li></ol></div>`).join("")
+        : `<p class="empty">No entries yet. The first one will show here after it is submitted.</p>`}
+    </div>`;
+  const form = document.getElementById("entryForm");
+  if (form) form.onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector("button"); btn.disabled = true;
+    const { error } = await sb.rpc("training_submit_entry", {
+      p_id: emp.id, p_date: today,
+      p_learned_1: document.getElementById("l1").value,
+      p_learned_2: document.getElementById("l2").value
+    });
+    if (error) {
+      const text = error.code === "23505" ? "Today's entry was already submitted." : "Could not save: " + error.message;
+      document.getElementById("entryMsg").innerHTML = `<p class="msg err">${esc(text)}</p>`;
+      btn.disabled = false; return;
+    }
+    renderEmployee(emp.id);
+  };
+}
+
+/* ---------- Router ---------- */
+async function route(){
+  const eid = new URLSearchParams(location.search).get("e");
+  if (eid) return renderEmployee(eid);
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) return renderLogin();
+  if (!(await isAdmin())) { await sb.auth.signOut(); return renderLogin("That account is not set up as a Training Log admin."); }
+  renderAdmin();
+}
+route();
+</script>
+</body>
+</html>
