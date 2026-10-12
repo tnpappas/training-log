@@ -93,10 +93,21 @@ function renderLogin(note){
       <form id="loginForm">
         <div class="field"><label for="em">Email</label><input id="em" type="email" required autocomplete="username"></div>
         <div class="field"><label for="pw">Password</label><input id="pw" type="password" required autocomplete="current-password"></div>
-        <button type="submit">Sign in</button>
+        <div class="actions"><button type="submit">Sign in</button><button type="button" class="ghost" id="forgot">Forgot password</button></div>
         <div id="loginMsg">${note ? `<p class="msg err">${esc(note)}</p>` : ""}</div>
       </form>
     </div>`;
+  document.getElementById("forgot").onclick = async (e) => {
+    const email = document.getElementById("em").value.trim();
+    const msg = document.getElementById("loginMsg");
+    if (!email) { msg.innerHTML = `<p class="msg err">Enter your email above, then click Forgot password.</p>`; return; }
+    e.target.disabled = true;
+    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+    e.target.disabled = false;
+    msg.innerHTML = error
+      ? `<p class="msg err">Could not send the reset email: ${esc(error.message)}</p>`
+      : `<p class="msg ok">Check ${esc(email)} for a reset link. Open it on this device to set a new password.</p>`;
+  };
   document.getElementById("loginForm").onsubmit = async (e) => {
     e.preventDefault();
     const btn = e.target.querySelector("button"); btn.disabled = true;
@@ -244,8 +255,38 @@ async function renderEmployee(id){
   };
 }
 
+/* ---------- Set new password (from reset email) ---------- */
+function renderSetPassword(){
+  app.innerHTML = `
+    <h1>Set a new password</h1>
+    <p class="sub">Choose a password of at least 8 characters. You will use it to sign in to the Training Log.</p>
+    <div class="card">
+      <form id="pwForm">
+        <div class="field"><label for="np">New password</label><input id="np" type="password" required minlength="8" autocomplete="new-password"></div>
+        <div class="field"><label for="np2">Confirm new password</label><input id="np2" type="password" required minlength="8" autocomplete="new-password"></div>
+        <button type="submit">Save password</button>
+        <div id="pwMsg"></div>
+      </form>
+    </div>`;
+  document.getElementById("pwForm").onsubmit = async (e) => {
+    e.preventDefault();
+    const a = document.getElementById("np").value, b = document.getElementById("np2").value;
+    const msg = document.getElementById("pwMsg");
+    if (a !== b) { msg.innerHTML = `<p class="msg err">The two passwords do not match.</p>`; return; }
+    const btn = e.target.querySelector("button"); btn.disabled = true;
+    const { error } = await sb.auth.updateUser({ password: a });
+    if (error) { msg.innerHTML = `<p class="msg err">Could not save: ${esc(error.message)}</p>`; btn.disabled = false; return; }
+    recovering = false;
+    history.replaceState(null, "", location.pathname);
+    route();
+  };
+}
+let recovering = /type=recovery/.test(location.hash);
+sb.auth.onAuthStateChange((event) => { if (event === "PASSWORD_RECOVERY") { recovering = true; renderSetPassword(); } });
+
 /* ---------- Router ---------- */
 async function route(){
+  if (recovering) return renderSetPassword();
   const eid = new URLSearchParams(location.search).get("e");
   if (eid) return renderEmployee(eid);
   const { data: { session } } = await sb.auth.getSession();
